@@ -11,17 +11,24 @@ DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 def pretokenize(
     input_path: str | os.PathLike,
     special_tokens: list[str] = ["<|endoftext|>"],
-) -> list[bytes]:
+) -> dict[tuple[bytes], int]:
     with open(input_path) as f:
         raw_text = f.read()
     special_tokens_escaped = [re.escape(t) for t in special_tokens]
     pattern = "|".join(special_tokens_escaped)
     parts = re.split(pattern, raw_text)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    tokens = []
+    tokens_dict = Counter()
     for part in parts:
-        tokens.extend([t.encode("utf-8") for t in regex.findall(PAT, part)])
-    return tokens
+        for t in regex.findall(PAT, part):
+            tokens_dict[t.encode("utf-8")] += 1
+    # tokens_dict = {b'abc': 1, b'123': 2}
+    tokens_tuple_dict = Counter()
+    for k, v in tokens_dict.items():
+        byte_tuple = tuple(bytes([i]) for i in list(k))
+        # byte_tuple = (b'a', b'b', b'c')
+        tokens_tuple_dict[byte_tuple] = v
+    return tokens_tuple_dict
 
 
 def init_vocab(special_tokens: list[str]) -> dict[int, bytes]:
@@ -34,11 +41,10 @@ def init_vocab(special_tokens: list[str]) -> dict[int, bytes]:
     return vocab
 
 
-def get_merge_pair(byte_tuple_list: list[tuple[bytes]]) -> tuple[bytes, bytes]:
+def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
     # count adjacent byte pairs
-    c = Counter(byte_tuple_list)
     merge_counter = Counter()
-    for byte_seq, seq_ct in c.items():
+    for byte_seq, seq_ct in byte_tuple_dict.items():
         if len(byte_seq) > 1:
             for i, j in pairwise(byte_seq):
                 merge_counter[(i, j)] += seq_ct
@@ -49,49 +55,48 @@ def get_merge_pair(byte_tuple_list: list[tuple[bytes]]) -> tuple[bytes, bytes]:
     return merge_byte_pair
 
 
-def apply_merge_pair(byte_tuple_list: list[tuple[bytes]], merge_byte_pair: tuple[bytes, bytes]) -> list[tuple[bytes]]:
-    merged_bytes_tuples = []
-    for byte_seq in byte_tuple_list:
+def apply_merge_pair(
+    byte_tuple_dict: dict[tuple[bytes], int], merge_byte_pair: tuple[bytes, bytes]
+) -> dict[tuple[bytes], int]:
+    merged_bytes_tuple_dict = Counter()
+    for byte_tuple, count in byte_tuple_dict.items():
         new_byte_seq = []
         i = 0
-        while i < len(byte_seq):
-            if i < len(byte_seq) - 1 and (byte_seq[i], byte_seq[i + 1]) == merge_byte_pair:
+        while i < len(byte_tuple):
+            if i < len(byte_tuple) - 1 and (byte_tuple[i], byte_tuple[i + 1]) == merge_byte_pair:
                 new_byte_seq.append(merge_byte_pair[0] + merge_byte_pair[1])
                 i += 2
                 i += 2
             else:
-                new_byte_seq.append(byte_seq[i])
+                new_byte_seq.append(byte_tuple[i])
                 i += 1
-        merged_bytes_tuples.append(tuple(new_byte_seq))
-    return merged_bytes_tuples
+        merged_bytes_tuple_dict[tuple(new_byte_seq)] += count
+    return merged_bytes_tuple_dict
 
 
 def train_bpe(
     input_path: str | os.PathLike,
     special_tokens: list[str] = ["<|endoftext|>"],
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    pre_tokenized_bytes = pretokenize(input_path, special_tokens)
+    bytes_tuple_dict = pretokenize(input_path, special_tokens)
     vocab = init_vocab(special_tokens)
-    next_vocab_index = max(vocab.keys()) + 1
     merge_byte_pairs = []
-    bytes_tuples = [tuple(bytes([i]) for i in list(word)) for word in pre_tokenized_bytes]
-    print("input bytes", bytes_tuples)
+    next_vocab_index = max(vocab.keys()) + 1
     for merge_iteration in range(6):
         print(f"---------merge_iteration:{merge_iteration}--------------")
-        merge_byte_pair = get_merge_pair(bytes_tuples)
+        merge_byte_pair = get_merge_pair(bytes_tuple_dict)
         merge_byte_pairs.append(merge_byte_pair)
         print("merge_byte_pair", merge_byte_pair)
         vocab[next_vocab_index] = merge_byte_pair[0] + merge_byte_pair[1]
         next_vocab_index += 1
-        bytes_tuples = apply_merge_pair(bytes_tuples, merge_byte_pair)
-        print("bytes_tuples", bytes_tuples)
+        bytes_tuple_dict = apply_merge_pair(bytes_tuple_dict, merge_byte_pair)
     return vocab, merge_byte_pairs
 
 
 if __name__ == "__main__":
     input_file = DATA_PATH / "example.txt"
-    # input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
-    tokens = pretokenize(input_file)
+    input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
+    # tokens = pretokenize(input_file)
     special_tokens = ["<|endoftext|>"]
     vocab, merges = train_bpe(input_file, special_tokens)
     print("vocab", vocab)
