@@ -41,7 +41,7 @@ def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, byt
     max_count = max(merge_counter.values())
     # break the tie and get most frequent pair
     tied_pairs = [pair for pair, count in merge_counter.items() if count == max_count]
-    merge_byte_pair = sorted(tied_pairs, reverse=True)[0]
+    merge_byte_pair = max(tied_pairs)
     return merge_byte_pair
 
 
@@ -79,7 +79,6 @@ def train_bpe(
     while len(vocab_list) < vocab_size:
         merge_byte_pair = get_merge_pair(bytes_tuple_dict)
         merge_byte_pairs.append(merge_byte_pair)
-        print("merge_byte_pair", merge_byte_pair)
         vocab_list.append(merge_byte_pair[0] + merge_byte_pair[1])
         bytes_tuple_dict = apply_merge_pair(bytes_tuple_dict, merge_byte_pair)
     vocab = {i: v for i, v in enumerate(vocab_list)}
