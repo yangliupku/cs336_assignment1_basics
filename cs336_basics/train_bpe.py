@@ -31,16 +31,6 @@ def pretokenize(
     return tokens_tuple_dict
 
 
-def init_vocab(special_tokens: list[str]) -> dict[int, bytes]:
-    vocab = {i: bytes([i]) for i in range(256)}  # Initialize with byte values
-    curr_index = 256
-    for token in special_tokens:
-        if token not in vocab.values():
-            vocab[curr_index] = token.encode("utf-8")
-            curr_index += 1
-    return vocab
-
-
 def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
     # count adjacent byte pairs
     merge_counter = Counter()
@@ -76,28 +66,30 @@ def apply_merge_pair(
 
 def train_bpe(
     input_path: str | os.PathLike,
+    vocab_size: int,
     special_tokens: list[str] = ["<|endoftext|>"],
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     bytes_tuple_dict = pretokenize(input_path, special_tokens)
-    vocab = init_vocab(special_tokens)
+    vocab_list = [t.encode("utf-8") for t in special_tokens]
+    for i in range(256):
+        if bytes([i]) not in vocab_list:
+            vocab_list.append(bytes([i]))
+
     merge_byte_pairs = []
-    next_vocab_index = max(vocab.keys()) + 1
-    for merge_iteration in range(6):
-        print(f"---------merge_iteration:{merge_iteration}--------------")
+    while len(vocab_list) < vocab_size:
         merge_byte_pair = get_merge_pair(bytes_tuple_dict)
         merge_byte_pairs.append(merge_byte_pair)
         print("merge_byte_pair", merge_byte_pair)
-        vocab[next_vocab_index] = merge_byte_pair[0] + merge_byte_pair[1]
-        next_vocab_index += 1
+        vocab_list.append(merge_byte_pair[0] + merge_byte_pair[1])
         bytes_tuple_dict = apply_merge_pair(bytes_tuple_dict, merge_byte_pair)
+    vocab = {i: v for i, v in enumerate(vocab_list)}
     return vocab, merge_byte_pairs
 
 
 if __name__ == "__main__":
-    input_file = DATA_PATH / "example.txt"
+    # input_file = DATA_PATH / "example.txt"
     input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
-    # tokens = pretokenize(input_file)
     special_tokens = ["<|endoftext|>"]
-    vocab, merges = train_bpe(input_file, special_tokens)
+    vocab, merges = train_bpe(input_file, 500, special_tokens)
     print("vocab", vocab)
     print("merges", merges)
