@@ -6,6 +6,7 @@ import os
 import regex
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
+FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
 
 
 def pretokenize(
@@ -56,7 +57,6 @@ def apply_merge_pair(
             if i < len(byte_tuple) - 1 and (byte_tuple[i], byte_tuple[i + 1]) == merge_byte_pair:
                 new_byte_seq.append(merge_byte_pair[0] + merge_byte_pair[1])
                 i += 2
-                i += 2
             else:
                 new_byte_seq.append(byte_tuple[i])
                 i += 1
@@ -87,8 +87,9 @@ def train_bpe(
 
 if __name__ == "__main__":
     # input_file = DATA_PATH / "example.txt"
-    input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
+    # input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
+    input_file = FIXUTRES_PATH / "corpus.en"
     special_tokens = ["<|endoftext|>"]
-    vocab, merges = train_bpe(input_file, 500, special_tokens)
+    vocab, merges = train_bpe(input_file, 270, special_tokens)
     print("vocab", vocab)
     print("merges", merges)
