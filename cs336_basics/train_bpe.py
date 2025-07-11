@@ -4,25 +4,70 @@ import pathlib
 import re
 import os
 import regex
+from typing import BinaryIO
+import multiprocessing as mp
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
 
 
-def pretokenize(
-    input_path: str | os.PathLike,
-    special_tokens: list[str] = ["<|endoftext|>"],
+def find_chunk_boundaries(file: BinaryIO, desired_num_chunks: int, split_special_token: bytes) -> list[int]:
+    """
+    Chunk the file into parts that can be counted independently.
+    May return fewer chunks if the boundaries end up overlapping.
+    """
+    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+
+    # Get total file size in bytes
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    chunk_size = file_size // desired_num_chunks
+
+    # Initial guesses for chunk boundary locations, uniformly spaced
+    # Chunks start on previous index, don't include last index
+    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    chunk_boundaries[-1] = file_size
+
+    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
+
+    for bi in range(1, len(chunk_boundaries) - 1):
+        initial_position = chunk_boundaries[bi]
+        file.seek(initial_position)  # Start at boundary guess
+        while True:
+            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+
+            # If EOF, this boundary should be at the end of the file
+            if mini_chunk == b"":
+                chunk_boundaries[bi] = file_size
+                break
+
+            # Find the special token in the mini chunk
+            found_at = mini_chunk.find(split_special_token)
+            if found_at != -1:
+                chunk_boundaries[bi] = initial_position + found_at
+                break
+            initial_position += mini_chunk_size
+
+    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
+    return sorted(set(chunk_boundaries))
+
+
+def pretokenize_chunk(
+    input_path: str | os.PathLike, chunk_start: int, chunk_end: int, special_tokens: list[str]
 ) -> dict[tuple[bytes], int]:
-    with open(input_path) as f:
-        raw_text = f.read()
+    with open(input_path, "rb") as f:
+        f.seek(chunk_start)
+        chunk = f.read(chunk_end - chunk_start).decode("utf-8", errors="ignore")
     special_tokens_escaped = [re.escape(t) for t in special_tokens]
     pattern = "|".join(special_tokens_escaped)
-    parts = re.split(pattern, raw_text)
+    parts = re.split(pattern, chunk)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     tokens_dict = Counter()
     for part in parts:
-        for t in regex.findall(PAT, part):
-            tokens_dict[t.encode("utf-8")] += 1
+        for t in regex.finditer(PAT, part):
+            tokens_dict[t.group().encode("utf-8")] += 1
     # tokens_dict = {b'abc': 1, b'123': 2}
     tokens_tuple_dict = Counter()
     for k, v in tokens_dict.items():
@@ -30,6 +75,23 @@ def pretokenize(
         # byte_tuple = (b'a', b'b', b'c')
         tokens_tuple_dict[byte_tuple] = v
     return tokens_tuple_dict
+
+
+def pretokenize(
+    input_path: str | os.PathLike,
+    special_tokens: list[str] = ["<|endoftext|>"],
+    num_processes: int = 8,
+) -> dict[tuple[bytes], int]:
+    chunk_args = []
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+    for star, end in pairwise(boundaries):
+        chunk_args.append((input_path, star, end, special_tokens))
+
+    with mp.Pool(processes=num_processes) as pool:
+        results = pool.starmap(pretokenize_chunk, chunk_args)
+
+    return sum(results, Counter())
 
 
 def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
@@ -68,8 +130,9 @@ def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str] = ["<|endoftext|>"],
+    num_processes: int = 8,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    bytes_tuple_dict = pretokenize(input_path, special_tokens)
+    bytes_tuple_dict = pretokenize(input_path, special_tokens, num_processes)
     vocab_list = [t.encode("utf-8") for t in special_tokens]
     for i in range(256):
         if bytes([i]) not in vocab_list:
@@ -85,11 +148,17 @@ def train_bpe(
     return vocab, merge_byte_pairs
 
 
-if __name__ == "__main__":
-    # input_file = DATA_PATH / "example.txt"
-    # input_file = DATA_PATH / "TinyStoriesV2-GPT4-valid.txt"
-    input_file = FIXUTRES_PATH / "corpus.en"
+def train_bpe_tinystories():
+    input_file = DATA_PATH / "TinyStoriesV2-GPT4-train.txt"
     special_tokens = ["<|endoftext|>"]
-    vocab, merges = train_bpe(input_file, 270, special_tokens)
+    vocab, merges = train_bpe(input_file, 500, special_tokens)
+    print(merges)
+
+
+if __name__ == "__main__":
+    input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
+    special_tokens = ["<|endoftext|>"]
+    vocab, merges = train_bpe(input_file, 1000, special_tokens)
     print("vocab", vocab)
     print("merges", merges)
+    # train_bpe_tinystories()
