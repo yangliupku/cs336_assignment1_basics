@@ -13,6 +13,7 @@ from tqdm import tqdm
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"
 FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
+SHOW_PROGRESS = True
 
 
 def find_chunk_boundaries(file: BinaryIO, desired_num_chunks: int, split_special_token: bytes) -> list[int]:
@@ -95,7 +96,7 @@ def pretokenize(
 
     with mp.Pool(processes=num_processes) as pool:
         results = pool.starmap(pretokenize_chunk, chunk_args)
-    print(f"---> Pretokenization time: {time.time() - start_time:.2f}s")
+    # print(f"---> Pretokenization time: {time.time() - start_time:.2f}s")
     return sum(results, Counter())
 
 
@@ -111,7 +112,7 @@ def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, byt
     # break the tie and get most frequent pair
     tied_pairs = [pair for pair, count in merge_counter.items() if count == max_count]
     merge_byte_pair = max(tied_pairs)
-    tqdm.write(f"---> get_merge_pair time: {time.time() - start_time:.2f}s")
+    # tqdm.write(f"---> get_merge_pair time: {time.time() - start_time:.2f}s")
     return merge_byte_pair
 
 
@@ -131,7 +132,7 @@ def apply_merge_pair(
                 new_byte_seq.append(byte_tuple[i])
                 i += 1
         merged_bytes_tuple_dict[tuple(new_byte_seq)] += count
-    tqdm.write(f"---> apply_merge_pair time: {time.time() - start_time:.2f}s")
+    # tqdm.write(f"---> apply_merge_pair time: {time.time() - start_time:.2f}s")
     return merged_bytes_tuple_dict
 
 
@@ -148,7 +149,7 @@ def train_bpe(
             vocab_list.append(bytes([i]))
 
     merge_byte_pairs = []
-    with tqdm(total=vocab_size, initial=len(vocab_list), desc="Building vocab") as pbar:
+    with tqdm(total=vocab_size, initial=len(vocab_list), desc="Building vocab", disable=not SHOW_PROGRESS) as pbar:
         while len(vocab_list) < vocab_size:
             merge_byte_pair = get_merge_pair(bytes_tuple_dict)
             merge_byte_pairs.append(merge_byte_pair)
