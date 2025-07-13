@@ -165,4 +165,5 @@ cython_debug/
 # data 
 data/
 bpe_output/
+logs/
 .vscode/settings.json

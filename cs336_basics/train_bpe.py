@@ -9,6 +9,11 @@ from typing import BinaryIO
 import multiprocessing as mp
 import time
 from tqdm import tqdm
+from cs336_basics.logger import Logger
+import logging
+
+logger = Logger(__file__, level=logging.INFO)
+
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"
@@ -16,7 +21,9 @@ FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fi
 SHOW_PROGRESS = True
 
 
-def find_chunk_boundaries(file: BinaryIO, desired_num_chunks: int, split_special_token: bytes) -> list[int]:
+def find_chunk_boundaries(
+    file: BinaryIO, desired_num_chunks: int, split_special_token: bytes
+) -> list[int]:
     """
     Chunk the file into parts that can be counted independently.
     May return fewer chunks if the boundaries end up overlapping.
@@ -96,7 +103,7 @@ def pretokenize(
 
     with mp.Pool(processes=num_processes) as pool:
         results = pool.starmap(pretokenize_chunk, chunk_args)
-    # print(f"---> Pretokenization time: {time.time() - start_time:.2f}s")
+    logger.debug(f"---> Pretokenization time: {time.time() - start_time:.2f}s")
     return sum(results, Counter())
 
 
@@ -112,7 +119,7 @@ def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, byt
     # break the tie and get most frequent pair
     tied_pairs = [pair for pair, count in merge_counter.items() if count == max_count]
     merge_byte_pair = max(tied_pairs)
-    # tqdm.write(f"---> get_merge_pair time: {time.time() - start_time:.2f}s")
+    logger.debug(f"get_merge_pair time: {time.time() - start_time:.2f}s")
     return merge_byte_pair
 
 
@@ -132,7 +139,7 @@ def apply_merge_pair(
                 new_byte_seq.append(byte_tuple[i])
                 i += 1
         merged_bytes_tuple_dict[tuple(new_byte_seq)] += count
-    # tqdm.write(f"---> apply_merge_pair time: {time.time() - start_time:.2f}s")
+    logger.debug(f"apply_merge_pair time: {time.time() - start_time:.2f}s")
     return merged_bytes_tuple_dict
 
 
@@ -142,6 +149,7 @@ def train_bpe(
     special_tokens: list[str] = ["<|endoftext|>"],
     num_processes: int = 8,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    start_time = time.time()
     bytes_tuple_dict = pretokenize(input_path, special_tokens, num_processes)
     vocab_list = [t.encode("utf-8") for t in special_tokens]
     for i in range(256):
@@ -149,7 +157,9 @@ def train_bpe(
             vocab_list.append(bytes([i]))
 
     merge_byte_pairs = []
-    with tqdm(total=vocab_size, initial=len(vocab_list), desc="Building vocab", disable=not SHOW_PROGRESS) as pbar:
+    with tqdm(
+        total=vocab_size, initial=len(vocab_list), desc="Building vocab", disable=not SHOW_PROGRESS
+    ) as pbar:
         while len(vocab_list) < vocab_size:
             merge_byte_pair = get_merge_pair(bytes_tuple_dict)
             merge_byte_pairs.append(merge_byte_pair)
@@ -157,24 +167,23 @@ def train_bpe(
             bytes_tuple_dict = apply_merge_pair(bytes_tuple_dict, merge_byte_pair)
             pbar.update(1)
     vocab = {i: v for i, v in enumerate(vocab_list)}
+    logger.info(f"-------> Training elapsed time: {time.time() - start_time:.2f}s")
     return vocab, merge_byte_pairs
 
 
 def train_bpe_tinystories():
-    start_time = time.time()
     input_file = DATA_PATH / "TinyStoriesV2-GPT4-train.txt"
     special_tokens = ["<|endoftext|>"]
     vocab, merges = train_bpe(input_file, 10000, special_tokens)
     with open(OUTPUT_PATH / "tinystories.pkl", "wb") as f:
         pickle.dump({"vocab": vocab, "merges": merges}, f)
-    print(f"-------> Training elapsed time: {time.time() - start_time:.2f}s")
 
 
 if __name__ == "__main__":
-    # input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
-    # special_tokens = ["<|endoftext|>"]
-    # vocab, merges = train_bpe(input_file, 1000, special_tokens)
-    # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
-    #     pickle.dump({"vocab": vocab, "merges": merges}, f)
+    input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
+    special_tokens = ["<|endoftext|>"]
+    vocab, merges = train_bpe(input_file, 1000, special_tokens)
+    with open(OUTPUT_PATH / "test.pkl", "wb") as f:
+        pickle.dump({"vocab": vocab, "merges": merges}, f)
 
-    train_bpe_tinystories()
+    # train_bpe_tinystories()
