@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import pairwise
 import pathlib
 import pickle
@@ -18,7 +18,8 @@ logger = Logger(__file__, level=logging.INFO)
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"
 FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
-SHOW_PROGRESS = True
+SHOW_PROGRESS = False
+logging.basicConfig(level=logging.DEBUG)
 
 
 def find_chunk_boundaries(
@@ -143,6 +144,69 @@ def apply_merge_pair(
     return merged_bytes_tuple_dict
 
 
+def init_token_pairs(
+    byte_tuple_dict: dict[tuple[bytes], int],
+) -> tuple[Counter[tuple[bytes, bytes], int], dict[tuple[bytes, bytes], set]]:
+    token_pair_counter: Counter[tuple[bytes, bytes], int] = Counter()
+    token_pair_src: dict[tuple[bytes, bytes], set] = defaultdict(set)
+    for byte_seq, seq_ct in byte_tuple_dict.items():
+        if len(byte_seq) > 1:
+            for i, j in pairwise(byte_seq):
+                token_pair_counter[(i, j)] += seq_ct
+                token_pair_src[(i, j)].add(byte_seq)
+    return token_pair_counter, token_pair_src
+
+
+def get_merge_pair_with_cache(
+    token_pair_counter: dict[tuple[bytes, bytes], int],
+):
+    max_count = max(token_pair_counter.values())
+    # break the tie and get most frequent pair
+    tied_pairs = [pair for pair, count in token_pair_counter.items() if count == max_count]
+    merge_byte_pair = max(tied_pairs)
+    return merge_byte_pair
+
+
+def update_token_pairs(
+    byte_tuple_dict: dict[tuple[bytes], int],
+    token_pair_counter: dict[tuple[bytes, bytes], int],
+    token_pair_src: dict[tuple[bytes, bytes], set],
+    merge_byte_pair: tuple[bytes, bytes],
+):
+    token_tuples_to_update = token_pair_src[merge_byte_pair]
+    # subtract all token pairs counts
+    for byte_tuple in token_tuples_to_update:
+        seq_ct = byte_tuple_dict[byte_tuple]
+        for i, j in pairwise(byte_tuple):
+            token_pair_counter[(i, j)] -= seq_ct
+    print(token_pair_counter[merge_byte_pair])
+
+    # merge the byte paire and update the pair counters
+    for byte_tuple in token_tuples_to_update:
+        seq_ct = byte_tuple_dict[byte_tuple]
+        new_byte_seq = []
+        i = 0
+        while i < len(byte_tuple):
+            if i < len(byte_tuple) - 1 and (byte_tuple[i], byte_tuple[i + 1]) == merge_byte_pair:
+                new_byte_seq.append(merge_byte_pair[0] + merge_byte_pair[1])
+                i += 2
+            else:
+                new_byte_seq.append(byte_tuple[i])
+                i += 1
+        byte_tuple_dict[tuple(new_byte_seq)] += seq_ct
+        for i, j in pairwise(new_byte_seq):
+            token_pair_counter[(i, j)] += seq_ct
+            token_pair_src[(i, j)].add(tuple(new_byte_seq))
+
+        # byte_tuple_dict.pop(byte_tuple)
+
+    print(token_pair_counter[merge_byte_pair])
+    token_pair_counter.pop(merge_byte_pair)
+    token_pair_src.pop(merge_byte_pair)
+
+    return
+
+
 def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
@@ -171,6 +235,36 @@ def train_bpe(
     return vocab, merge_byte_pairs
 
 
+def train_bpe_new(
+    input_path: str | os.PathLike,
+    vocab_size: int,
+    special_tokens: list[str] = ["<|endoftext|>"],
+    num_processes: int = 8,
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    bytes_tuple_dict = pretokenize(input_path, special_tokens, num_processes)
+    vocab_list = [t.encode("utf-8") for t in special_tokens]
+    for i in range(256):
+        if bytes([i]) not in vocab_list:
+            vocab_list.append(bytes([i]))
+
+    merge_byte_pairs = []
+    token_pair_counter, token_pair_src = init_token_pairs(bytes_tuple_dict)
+
+    with tqdm(
+        total=vocab_size, initial=len(vocab_list), desc="Building vocab", disable=not SHOW_PROGRESS
+    ) as pbar:
+        while len(vocab_list) < vocab_size:
+            merge_byte_pair = get_merge_pair_with_cache(token_pair_counter)
+            vocab_list.append(merge_byte_pair[0] + merge_byte_pair[1])
+            merge_byte_pairs.append(merge_byte_pair)
+            update_token_pairs(
+                bytes_tuple_dict, token_pair_counter, token_pair_src, merge_byte_pair
+            )
+            pbar.update(1)
+    vocab = {i: v for i, v in enumerate(vocab_list)}
+    return vocab, merge_byte_pairs
+
+
 def train_bpe_tinystories():
     input_file = DATA_PATH / "TinyStoriesV2-GPT4-train.txt"
     special_tokens = ["<|endoftext|>"]
@@ -179,11 +273,21 @@ def train_bpe_tinystories():
         pickle.dump({"vocab": vocab, "merges": merges}, f)
 
 
-if __name__ == "__main__":
-    input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
+def train_bpe_owt():
+    start_time = time.time()
+    input_file = DATA_PATH / "owt_train.txt"
     special_tokens = ["<|endoftext|>"]
-    vocab, merges = train_bpe(input_file, 1000, special_tokens)
-    with open(OUTPUT_PATH / "test.pkl", "wb") as f:
+    vocab, merges = train_bpe(input_file, 32000, special_tokens)
+    with open(OUTPUT_PATH / "owt.pkl", "wb") as f:
         pickle.dump({"vocab": vocab, "merges": merges}, f)
+    print(f"-------> Training elapsed time: {time.time() - start_time:.2f}s")
 
-    # train_bpe_tinystories()
+
+if __name__ == "__main__":
+    # input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
+    # input_file = FIXUTRES_PATH / "corpus.en"
+    input_file = DATA_PATH / "example.txt"
+    special_tokens = ["<|endoftext|>"]
+    vocab, merges = train_bpe_new(input_file, 265, special_tokens)
+    # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
+    #     pickle.dump({"vocab": vocab, "merges": merges}, f)
