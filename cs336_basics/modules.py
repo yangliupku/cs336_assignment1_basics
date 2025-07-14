@@ -15,13 +15,37 @@ class Linear(torch.nn.Module):
         sig = math.sqrt(2 / (in_features + out_features))
         torch.nn.init.trunc_normal_(self.weight, std=sig, a=-3, b=3)
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         return einsum(input, self.weight, "... d_in, d_out d_in -> ... d_out")
 
 
+class Embedding(torch.nn.Module):
+    def __init__(self, num_embeddings, embedding_dim, device=None, dtype=None):
+        super().__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.weight = torch.nn.Parameter(
+            torch.empty((num_embeddings, embedding_dim), device=device, dtype=dtype)
+        )
+        # init parameter
+        torch.nn.init.trunc_normal_(self.weight, a=-3, b=3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.weight[x]
+
+
 if __name__ == "__main__":
-    x = torch.rand(2, 5)
+    # x = torch.rand(2, 5)
+    # print(x)
+    # layer = Linear(5, 4)
+    # print(layer.weight)
+    # print(layer(x))
+    vocab_size = 10
+    batch_size = 2
+    embedding_size = 4
+    seq_len = 3
+    embedding = Embedding(vocab_size, embedding_size)
+    input = torch.randint(0, vocab_size, (batch_size, seq_len))
+    x = embedding(input)
     print(x)
-    layer = Linear(5, 4)
-    print(layer.weight)
-    print(layer(x))
+    assert x.shape == (batch_size, seq_len, embedding_size)
