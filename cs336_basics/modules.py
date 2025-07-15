@@ -1,6 +1,6 @@
 import torch
 import math
-from einops import einsum
+from einops import einsum, rearrange, reduce
 
 
 class Linear(torch.nn.Module):
@@ -34,6 +34,22 @@ class Embedding(torch.nn.Module):
         return self.weight[x]
 
 
+class RMSNorm(torch.nn.Module):
+    def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
+        super().__init__()
+        self.d_model = d_model
+        self.eps = eps
+        self.weight = torch.nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        rms = rearrange(reduce(x**2, "b s d -> b s", "mean"), "b s->b s 1")
+        rms = torch.sqrt(rms + self.eps)
+        result = x / rms * self.weight
+        return result.to(in_dtype)
+
+
 if __name__ == "__main__":
     # x = torch.rand(2, 5)
     # print(x)
@@ -44,8 +60,11 @@ if __name__ == "__main__":
     batch_size = 2
     embedding_size = 4
     seq_len = 3
-    embedding = Embedding(vocab_size, embedding_size)
-    input = torch.randint(0, vocab_size, (batch_size, seq_len))
-    x = embedding(input)
-    print(x)
-    assert x.shape == (batch_size, seq_len, embedding_size)
+    # embedding = Embedding(vocab_size, embedding_size)
+    # input = torch.randint(0, vocab_size, (batch_size, seq_len))
+    # x = embedding(input)
+    # print(x)
+    # assert x.shape == (batch_size, seq_len, embedding_size)
+    input = torch.rand(batch_size, seq_len, embedding_size)
+    layer = RMSNorm(embedding_size)
+    print(layer(input))
