@@ -50,6 +50,33 @@ class RMSNorm(torch.nn.Module):
         return result.to(in_dtype)
 
 
+class SiLU(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor):
+        return x * torch.sigmoid(x)
+
+
+class SwiGLUFF(torch.nn.Module):
+    def __init__(self, d_model, d_ff):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.w1_weight = torch.nn.Parameter(torch.empty(d_ff, d_model))
+        self.w2_weight = torch.nn.Parameter(torch.empty(d_model, d_ff))
+        self.w3_weight = torch.nn.Parameter(torch.empty(d_ff, d_model))
+        self.silu = SiLU()
+        sig = math.sqrt(2 / (d_model + d_model))
+        for t in [self.w1_weight, self.w2_weight, self.w3_weight]:
+            torch.nn.init.trunc_normal_(t, std=sig, a=-3, b=3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        a = einsum(x, self.w1_weight, "... d_model, d_ff d_model -> ... d_ff")
+        b = einsum(x, self.w3_weight, "... d_model, d_ff d_model -> ... d_ff")
+        return einsum(self.silu(a) * b, self.w2_weight, "... d_ff, d_model d_ff -> ... d_model")
+
+
 if __name__ == "__main__":
     # x = torch.rand(2, 5)
     # print(x)
@@ -66,5 +93,5 @@ if __name__ == "__main__":
     # print(x)
     # assert x.shape == (batch_size, seq_len, embedding_size)
     input = torch.rand(batch_size, seq_len, embedding_size)
-    layer = RMSNorm(embedding_size)
+    layer = SwiGLUFF(embedding_size, 4 * embedding_size)
     print(layer(input))

@@ -9,7 +9,7 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 from cs336_basics.train_bpe import train_bpe
-from cs336_basics.modules import Linear, Embedding, RMSNorm
+from cs336_basics.modules import Linear, Embedding, RMSNorm, SiLU, SwiGLUFF
 
 
 def run_linear(
@@ -88,7 +88,9 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    layer = SwiGLUFF(d_model, d_ff)
+    layer.load_state_dict({"w1_weight": w1_weight, "w2_weight": w2_weight, "w3_weight": w3_weight})
+    return layer(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -399,7 +401,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    layer = SiLU()
+    return layer(in_features)
 
 
 def run_get_batch(
