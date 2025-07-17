@@ -11,6 +11,7 @@ import time
 from tqdm import tqdm
 from cs336_basics.logger import Logger
 import logging
+from copy import deepcopy
 
 logger = Logger(__file__, level=logging.INFO)
 
@@ -18,8 +19,7 @@ logger = Logger(__file__, level=logging.INFO)
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"
 FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
-SHOW_PROGRESS = False
-logging.basicConfig(level=logging.DEBUG)
+SHOW_PROGRESS = True
 
 
 def find_chunk_boundaries(
@@ -173,13 +173,13 @@ def update_token_pairs(
     token_pair_src: dict[tuple[bytes, bytes], set],
     merge_byte_pair: tuple[bytes, bytes],
 ):
-    token_tuples_to_update = token_pair_src[merge_byte_pair]
+    token_tuples_to_update = deepcopy(token_pair_src[merge_byte_pair])
     # subtract all token pairs counts
     for byte_tuple in token_tuples_to_update:
         seq_ct = byte_tuple_dict[byte_tuple]
         for i, j in pairwise(byte_tuple):
             token_pair_counter[(i, j)] -= seq_ct
-    print(token_pair_counter[merge_byte_pair])
+            token_pair_src[(i, j)].discard(byte_tuple)
 
     # merge the byte paire and update the pair counters
     for byte_tuple in token_tuples_to_update:
@@ -198,22 +198,20 @@ def update_token_pairs(
             token_pair_counter[(i, j)] += seq_ct
             token_pair_src[(i, j)].add(tuple(new_byte_seq))
 
-        # byte_tuple_dict.pop(byte_tuple)
+        byte_tuple_dict.pop(byte_tuple)
 
-    print(token_pair_counter[merge_byte_pair])
     token_pair_counter.pop(merge_byte_pair)
     token_pair_src.pop(merge_byte_pair)
 
     return
 
 
-def train_bpe(
+def train_bpe_old(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str] = ["<|endoftext|>"],
     num_processes: int = 8,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    start_time = time.time()
     bytes_tuple_dict = pretokenize(input_path, special_tokens, num_processes)
     vocab_list = [t.encode("utf-8") for t in special_tokens]
     for i in range(256):
@@ -231,11 +229,10 @@ def train_bpe(
             bytes_tuple_dict = apply_merge_pair(bytes_tuple_dict, merge_byte_pair)
             pbar.update(1)
     vocab = {i: v for i, v in enumerate(vocab_list)}
-    logger.info(f"-------> Training elapsed time: {time.time() - start_time:.2f}s")
     return vocab, merge_byte_pairs
 
 
-def train_bpe_new(
+def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str] = ["<|endoftext|>"],
@@ -274,20 +271,20 @@ def train_bpe_tinystories():
 
 
 def train_bpe_owt():
-    start_time = time.time()
     input_file = DATA_PATH / "owt_train.txt"
     special_tokens = ["<|endoftext|>"]
     vocab, merges = train_bpe(input_file, 32000, special_tokens)
     with open(OUTPUT_PATH / "owt.pkl", "wb") as f:
         pickle.dump({"vocab": vocab, "merges": merges}, f)
-    print(f"-------> Training elapsed time: {time.time() - start_time:.2f}s")
 
 
 if __name__ == "__main__":
+    train_bpe_owt()
     # input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
     # input_file = FIXUTRES_PATH / "corpus.en"
-    input_file = DATA_PATH / "example.txt"
-    special_tokens = ["<|endoftext|>"]
-    vocab, merges = train_bpe_new(input_file, 265, special_tokens)
+    # input_file = DATA_PATH / "example.txt"
+    # special_tokens = ["<|endoftext|>"]
+    # vocab, merges = train_bpe(input_file, 265, special_tokens)
+    # print(merges)
     # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
     #     pickle.dump({"vocab": vocab, "merges": merges}, f)
