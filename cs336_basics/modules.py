@@ -1,6 +1,7 @@
 import torch
 import math
 from einops import einsum, rearrange, reduce
+from jaxtyping import Float
 
 
 class Linear(torch.nn.Module):
@@ -58,6 +59,42 @@ class SiLU(torch.nn.Module):
         return x * torch.sigmoid(x)
 
 
+class RotaryPositionalEmbedding(torch.nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super().__init__()
+        self.theta = theta
+        self.d_k = d_k
+        assert d_k % 2 == 0
+        self.max_seq_len = max_seq_len
+        self.rot_matrix: Float[torch.Tensor, "max_seq_len d_k/2 2 2"] = (
+            self.get_rotation_maxtrix().to(device)
+        )
+
+    def get_rotation_maxtrix(self) -> Float[torch.Tensor, "max_seq_len d_k/2 2 2"]:
+        dk_2 = self.d_k // 2
+        d_k = self.d_k
+        i = torch.arange(0, self.max_seq_len)
+        k = torch.arange(0, dk_2)
+        theta_ik = einsum(i, 1 / self.theta ** (2 * k / d_k), "s, dk2 -> s dk2")
+        r = [
+            torch.cos(theta_ik),
+            -1 * torch.sin(theta_ik),
+            torch.sin(theta_ik),
+            torch.cos(theta_ik),
+        ]
+        return rearrange(r, "(d1 d2) s dk2 -> s dk2 d1 d2", d1=2)
+
+    def forward(
+        self,
+        x: Float[torch.Tensor, "... seq_len d_k"],
+        token_positions: Float[torch.Tensor, "... seq_len"],
+    ) -> Float[torch.Tensor, "... seq_len d_k"]:
+        rot: Float[torch.Tensor, "... seq_len d_k/2 2 2"] = self.rot_matrix[token_positions]
+        x1 = rearrange(x, "... (dk2 d2) -> ... dk2 d2", d2=2)
+        x2 = einsum(x1, rot, "... dk2 d2, ... dk2 d1 d2 -> ... dk2 d1")
+        return rearrange(x2, "... dk2 d1-> ... (dk2 d1)")
+
+
 class SwiGLUFF(torch.nn.Module):
     def __init__(self, d_model, d_ff):
         super().__init__()
@@ -78,20 +115,13 @@ class SwiGLUFF(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    # x = torch.rand(2, 5)
-    # print(x)
-    # layer = Linear(5, 4)
-    # print(layer.weight)
-    # print(layer(x))
-    vocab_size = 10
+    seed = 0
+    torch.manual_seed(seed)
     batch_size = 2
     embedding_size = 4
+    max_seq_length = 10
     seq_len = 3
-    # embedding = Embedding(vocab_size, embedding_size)
-    # input = torch.randint(0, vocab_size, (batch_size, seq_len))
-    # x = embedding(input)
-    # print(x)
-    # assert x.shape == (batch_size, seq_len, embedding_size)
     input = torch.rand(batch_size, seq_len, embedding_size)
-    layer = SwiGLUFF(embedding_size, 4 * embedding_size)
-    print(layer(input))
+    token_positions = torch.randint(0, max_seq_length - 1, (batch_size, seq_len))
+    layer = RotaryPositionalEmbedding(theta=0.5, d_k=embedding_size, max_seq_len=max_seq_length)
+    print(layer(input, token_positions))
