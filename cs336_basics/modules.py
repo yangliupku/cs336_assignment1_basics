@@ -168,6 +168,8 @@ class MultiHeadSelfAttention(torch.nn.Module):
     ) -> Float[torch.Tensor, "... seq_len d_out"]:
         seq_len = x.shape[-2]
         mask = self.tri_mask[:seq_len, :seq_len]
+        if token_positions is None:
+            token_positions = torch.arange(seq_len)
         q_proj_weight_batched = rearrange(
             self.q_proj_weight, "(head dh) dk -> head dh dk", head=self.num_heads
         )
@@ -180,13 +182,38 @@ class MultiHeadSelfAttention(torch.nn.Module):
         Q = einsum(x, q_proj_weight_batched, "... seq d, head dh d->... head seq dh")
         K = einsum(x, k_proj_weight_batched, "... seq d, head dh d->... head seq dh")
         V = einsum(x, v_proj_weight_batched, "... seq d, head dh d->... head seq dh")
-        if self.enable_rope and token_positions is not None:
+        if self.enable_rope:
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
 
         att_res_batched = scaled_dot_product_attention(Q, K, V, mask)
         att_res = rearrange(att_res_batched, "... heads seq v-> ... seq (heads v)")
         return einsum(att_res, self.o_proj_weight, "... seq h, d h->... seq d")
+
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(
+        self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int = 1024, theta: float = 1.0
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.rms_norm_1 = RMSNorm(d_model=d_model)
+        self.rms_norm_2 = RMSNorm(d_model=d_model)
+        self.attn = MultiHeadSelfAttention(
+            d_model=d_model,
+            num_heads=num_heads,
+            max_seq_len=max_seq_len,
+            enable_rope=True,
+            theta=theta,
+        )
+        self.ffn = SwiGLUFF(d_model=d_model, d_ff=d_ff)
+
+    def forward(self, x):
+        x = x + self.attn(self.rms_norm_1(x))
+        x = x + self.ffn(self.rms_norm_2(x))
+        return x
 
 
 if __name__ == "__main__":
@@ -198,7 +225,8 @@ if __name__ == "__main__":
     num_heads = 2
     seq_len = 3
     input = torch.rand(batch_size, seq_len, embedding_size)
-    layer = MultiHeadSelfAttention(d_model=embedding_size, num_heads=num_heads, enable_rope=True)
+    layer = TransformerBlock(d_model=embedding_size, num_heads=num_heads, d_ff=4 * embedding_size)
     # print(layer(input, token_positions))
     print(input.shape)
     print(layer(input).shape)
+    print(layer.state_dict().keys())
