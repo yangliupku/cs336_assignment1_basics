@@ -1,7 +1,7 @@
 import torch
 import math
 from einops import einsum, rearrange, reduce
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 
 class Linear(torch.nn.Module):
@@ -133,15 +133,72 @@ def scaled_dot_product_attention(
     return einsum(sm_att_map, V, "... q s, ... s v -> ... q v")
 
 
+class MultiHeadSelfAttention(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        max_seq_len: int = 1024,
+        enable_rope: bool = False,
+        theta: float = 1.0,
+        device=None,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        # d_k = dv = d_model//num_heads
+        self.q_proj_weight = torch.nn.Parameter(torch.empty(d_model, d_model, device=device))
+        self.k_proj_weight = torch.nn.Parameter(torch.empty(d_model, d_model, device=device))
+        self.v_proj_weight = torch.nn.Parameter(torch.empty(d_model, d_model, device=device))
+        self.o_proj_weight = torch.nn.Parameter(torch.empty(d_model, d_model, device=device))
+        sig = math.sqrt(1 / (d_model))
+        for t in [self.q_proj_weight, self.k_proj_weight, self.v_proj_weight, self.o_proj_weight]:
+            torch.nn.init.trunc_normal_(t, std=sig, a=-3, b=3)
+        tri_mask = torch.tril(torch.ones(max_seq_len, max_seq_len)) == 1
+        self.register_buffer("tri_mask", tri_mask)
+        self.enable_rope = enable_rope
+        self.rope = RotaryPositionalEmbedding(
+            theta=theta, d_k=d_model // num_heads, max_seq_len=max_seq_len
+        )
+
+    def forward(
+        self,
+        x: Float[torch.Tensor, "... seq_length d_in"],
+        token_positions: Int[torch.Tensor, "... seq_length"] | None = None,
+    ) -> Float[torch.Tensor, "... seq_len d_out"]:
+        seq_len = x.shape[-2]
+        mask = self.tri_mask[:seq_len, :seq_len]
+        q_proj_weight_batched = rearrange(
+            self.q_proj_weight, "(head dh) dk -> head dh dk", head=self.num_heads
+        )
+        k_proj_weight_batched = rearrange(
+            self.k_proj_weight, "(head dh) dk -> head dh dk", head=self.num_heads
+        )
+        v_proj_weight_batched = rearrange(
+            self.v_proj_weight, "(head dh) dk -> head dh dk", head=self.num_heads
+        )
+        Q = einsum(x, q_proj_weight_batched, "... seq d, head dh d->... head seq dh")
+        K = einsum(x, k_proj_weight_batched, "... seq d, head dh d->... head seq dh")
+        V = einsum(x, v_proj_weight_batched, "... seq d, head dh d->... head seq dh")
+        if self.enable_rope and token_positions is not None:
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
+
+        att_res_batched = scaled_dot_product_attention(Q, K, V, mask)
+        att_res = rearrange(att_res_batched, "... heads seq v-> ... seq (heads v)")
+        return einsum(att_res, self.o_proj_weight, "... seq h, d h->... seq d")
+
+
 if __name__ == "__main__":
     seed = 0
     torch.manual_seed(seed)
-    batch_size = 2
-    embedding_size = 4
+    batch_size = 5
+    embedding_size = 8
     max_seq_length = 10
+    num_heads = 2
     seq_len = 3
-    input = torch.rand(seq_len, embedding_size)
-    # token_positions = torch.randint(0, max_seq_length - 1, (batch_size, seq_len))
-    # layer = RotaryPositionalEmbedding(theta=0.5, d_k=embedding_size, max_seq_len=max_seq_length)
+    input = torch.rand(batch_size, seq_len, embedding_size)
+    layer = MultiHeadSelfAttention(d_model=embedding_size, num_heads=num_heads, enable_rope=True)
     # print(layer(input, token_positions))
-    print(stable_softmax(input, -1))
+    print(input.shape)
+    print(layer(input).shape)
