@@ -115,10 +115,22 @@ class SwiGLUFF(torch.nn.Module):
         return einsum(self.silu(a) * b, self.w2_weight, "... d_ff, d_model d_ff -> ... d_model")
 
 
-def apply_stable_softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+def stable_softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     c = x - torch.max(x, dim=dim, keepdim=True).values  # subtract max to normalize
     c = torch.exp(c)
     return c / torch.sum(c, dim=dim, keepdim=True)
+
+
+def scaled_dot_product_attention(
+    Q: Float[torch.Tensor, "batch ... seq_len d_k"],
+    K: Float[torch.Tensor, "batch ... seq_len d_k"],
+    V: Float[torch.Tensor, "batch ... seq_len d_v"],
+    mask: Float[torch.Tensor, "seq_len seq_len"],
+) -> Float[torch.Tensor, "batch ... seq_len dv"]:
+    att_map = einsum(Q, K, "... q dk, ... k dk -> ... q k") / math.sqrt(Q.shape[-1])
+    masked_att_map = att_map.masked_fill(~mask, float("-inf"))
+    sm_att_map: Float[torch.Tensor, "... q k"] = stable_softmax(masked_att_map, dim=-1)
+    return einsum(sm_att_map, V, "... q s, ... s v -> ... q v")
 
 
 if __name__ == "__main__":
@@ -128,8 +140,8 @@ if __name__ == "__main__":
     embedding_size = 4
     max_seq_length = 10
     seq_len = 3
-    input = torch.rand(batch_size, seq_len, embedding_size)
+    input = torch.rand(seq_len, embedding_size)
     # token_positions = torch.randint(0, max_seq_length - 1, (batch_size, seq_len))
     # layer = RotaryPositionalEmbedding(theta=0.5, d_k=embedding_size, max_seq_len=max_seq_length)
     # print(layer(input, token_positions))
-    print(apply_stable_softmax(input, 2))
+    print(stable_softmax(input, -1))
