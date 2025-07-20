@@ -66,9 +66,10 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         self.d_k = d_k
         assert d_k % 2 == 0
         self.max_seq_len = max_seq_len
-        self.rot_matrix: Float[torch.Tensor, "max_seq_len d_k/2 2 2"] = (
-            self.get_rotation_maxtrix().to(device)
+        rot_matrix: Float[torch.Tensor, "max_seq_len d_k/2 2 2"] = self.get_rotation_maxtrix().to(
+            device
         )
+        self.register_buffer("rot_matrix", rot_matrix, persistent=False)
 
     def get_rotation_maxtrix(self) -> Float[torch.Tensor, "max_seq_len d_k/2 2 2"]:
         dk_2 = self.d_k // 2
