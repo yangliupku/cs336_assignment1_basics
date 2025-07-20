@@ -115,6 +115,12 @@ class SwiGLUFF(torch.nn.Module):
         return einsum(self.silu(a) * b, self.w2_weight, "... d_ff, d_model d_ff -> ... d_model")
 
 
+def apply_stable_softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+    c = x - torch.max(x, dim=dim, keepdim=True).values  # subtract max to normalize
+    c = torch.exp(c)
+    return c / torch.sum(c, dim=dim, keepdim=True)
+
+
 if __name__ == "__main__":
     seed = 0
     torch.manual_seed(seed)
@@ -123,6 +129,7 @@ if __name__ == "__main__":
     max_seq_length = 10
     seq_len = 3
     input = torch.rand(batch_size, seq_len, embedding_size)
-    token_positions = torch.randint(0, max_seq_length - 1, (batch_size, seq_len))
-    layer = RotaryPositionalEmbedding(theta=0.5, d_k=embedding_size, max_seq_len=max_seq_length)
-    print(layer(input, token_positions))
+    # token_positions = torch.randint(0, max_seq_length - 1, (batch_size, seq_len))
+    # layer = RotaryPositionalEmbedding(theta=0.5, d_k=embedding_size, max_seq_len=max_seq_length)
+    # print(layer(input, token_positions))
+    print(apply_stable_softmax(input, 2))
