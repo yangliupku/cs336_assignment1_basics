@@ -5,7 +5,7 @@ from jaxtyping import Float, Int
 
 
 class Linear(torch.nn.Module):
-    def __init__(self, in_features, out_features, device=None, dtype=None):
+    def __init__(self, in_features: int, out_features: int, device=None, dtype=None):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -216,16 +216,73 @@ class TransformerBlock(torch.nn.Module):
         return x
 
 
+class TransformerLM(torch.nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: float,
+    ):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.context_length = context_length
+        self.d_model = d_model
+        self.num_layer = num_layers
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.rope_theta = rope_theta
+        self.token_embeddings = Embedding(vocab_size, d_model)
+        self.layers = torch.nn.ModuleList(
+            [
+                TransformerBlock(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    d_ff=d_ff,
+                    max_seq_len=context_length,
+                    theta=rope_theta,
+                )
+                for i in range(num_layers)
+            ]
+        )
+        self.ln_final = RMSNorm(d_model=d_model)
+        self.lm_head = Linear(in_features=d_model, out_features=vocab_size)
+
+    def forward(
+        self, in_indices: Int[torch.Tensor, "batch seq"]
+    ) -> Float[torch.Tensor, "batch seq vocab"]:
+        """Out put logits before softmax"""
+        x: Float[torch.Tenor, "batch seq d_model"] = self.token_embeddings(in_indices)
+        for layer in self.layers:
+            x = layer(x)
+        x: Float[torch.Tensor, "batch seq d_model"] = self.ln_final(x)
+        x: Float[torch.Tensor, "batch seq vocab"] = self.lm_head(x)
+        return x
+
+
 if __name__ == "__main__":
     seed = 0
     torch.manual_seed(seed)
+    vocab_size = 20
     batch_size = 5
     embedding_size = 8
     max_seq_length = 10
     num_heads = 2
+    num_layers = 2
     seq_len = 3
-    input = torch.rand(batch_size, seq_len, embedding_size)
-    layer = TransformerBlock(d_model=embedding_size, num_heads=num_heads, d_ff=4 * embedding_size)
+    input = torch.randint(0, vocab_size, (batch_size, seq_len))
+    layer = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=max_seq_length,
+        d_model=embedding_size,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=4 * embedding_size,
+        rope_theta=1.0,
+    )
     # print(layer(input, token_positions))
     print(input.shape)
     print(layer(input).shape)

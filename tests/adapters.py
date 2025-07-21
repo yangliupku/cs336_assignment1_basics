@@ -20,6 +20,7 @@ from cs336_basics.modules import (
     MultiHeadSelfAttention,
     scaled_dot_product_attention,
     TransformerBlock,
+    TransformerLM,
 )
 
 
@@ -413,7 +414,36 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    state_dict = {
+        "token_embeddings.weight": weights["token_embeddings.weight"],
+        "ln_final.weight": weights["ln_final.weight"],
+        "lm_head.weight": weights["lm_head.weight"],
+    }
+    for i in range(num_layers):
+        state_dict.update(
+            {
+                f"layers.{i}.rms_norm_1.weight": weights[f"layers.{i}.ln1.weight"],
+                f"layers.{i}.rms_norm_2.weight": weights[f"layers.{i}.ln2.weight"],
+                f"layers.{i}.attn.q_proj_weight": weights[f"layers.{i}.attn.q_proj.weight"],
+                f"layers.{i}.attn.k_proj_weight": weights[f"layers.{i}.attn.k_proj.weight"],
+                f"layers.{i}.attn.v_proj_weight": weights[f"layers.{i}.attn.v_proj.weight"],
+                f"layers.{i}.attn.o_proj_weight": weights[f"layers.{i}.attn.output_proj.weight"],
+                f"layers.{i}.ffn.w1_weight": weights[f"layers.{i}.ffn.w1.weight"],
+                f"layers.{i}.ffn.w2_weight": weights[f"layers.{i}.ffn.w2.weight"],
+                f"layers.{i}.ffn.w3_weight": weights[f"layers.{i}.ffn.w3.weight"],
+            },
+        )
+    model.load_state_dict(state_dict, strict=False)
+    return model(in_indices)
 
 
 def run_rmsnorm(
