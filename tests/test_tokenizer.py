@@ -94,6 +94,7 @@ def test_empty_matches_tiktoken():
     test_string = ""
 
     reference_ids = reference_tokenizer.encode(test_string)
+    print(reference_ids)
     ids = tokenizer.encode(test_string)
     assert ids == reference_ids
 

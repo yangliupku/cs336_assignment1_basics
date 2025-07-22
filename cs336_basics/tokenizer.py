@@ -13,7 +13,7 @@ from cs336_basics.logger import Logger
 import logging
 from copy import deepcopy
 
-logger = Logger(__file__, level=logging.INFO)
+logger = Logger(__file__, level=logging.DEBUG)
 
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
@@ -278,8 +278,89 @@ def train_bpe_owt():
         pickle.dump({"vocab": vocab, "merges": merges}, f)
 
 
+class BPETokenizer:
+    def __init__(
+        self,
+        vocab: dict[int, bytes],
+        merges: list[tuple[bytes, bytes]],
+        special_tokens: list[str] | None = None,
+    ):
+        self.vocab = vocab
+        self.merges = merges
+        self.special_tokens = special_tokens
+        self.bytes_to_ids: dict[bytes, int] = {v: k for k, v in vocab.items()}
+        self.special_tokens_bytes_to_ids: dict[bytes, int] = {}
+        next_idx = max(vocab.keys()) + 1
+        if special_tokens is not None:
+            for t in special_tokens:
+                tt = t.encode("utf-8")
+                if tt not in self.bytes_to_ids:
+                    self.bytes_to_ids[tt] = next_idx
+                    self.vocab[next_idx] = tt
+                self.special_tokens_bytes_to_ids[tt] = self.bytes_to_ids[tt]
+
+        self.special_tokens_escaped = (
+            [re.escape(t) for t in special_tokens] if special_tokens else []
+        )
+        self.specical_token_split_pattern = f"({'|'.join(self.special_tokens_escaped)})"
+        self.pretokenize_pat = (
+            r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        )
+        self.decoded_bytes = {}  # cache decoded bytes
+
+    @classmethod
+    def from_files(cls, file_path: str | os.PathLike, special_tokens: list[str] | None = None):
+        with open(file_path, "rb") as f:
+            d = pickle.load(f)
+        return cls(vocab=d["vocab"], merges=d["merges"], special_tokens=special_tokens)
+
+    def encode(self, text: str) -> list[int]:
+        pretokenized_bytes = self.pretokenize(text)
+        encoded_results = []
+        for byte_word in pretokenized_bytes:
+            # byte_word = b'Hello'
+            if byte_word in self.decoded_bytes:
+                encoded_results.extend(self.decoded_bytes[byte_word])
+            elif byte_word in self.special_tokens_bytes_to_ids:
+                encoded_results.append(self.special_tokens_bytes_to_ids[byte_word])
+            else:
+                byte_seq = [bytes([i]) for i in list(byte_word)]
+                for merge in self.merges:
+                    byte_seq = self.apply_merge(byte_seq, merge)
+                ids = [self.bytes_to_ids[b] for b in byte_seq]
+                self.decoded_bytes[byte_word] = ids
+                encoded_results.extend(ids)
+        return encoded_results
+
+    def decode(self, ids: list[int]) -> str:
+        byte_list = [self.vocab[i] for i in ids]
+        return b"".join(byte_list).decode("utf-8", errors="replace")
+
+    def pretokenize(self, text: str) -> list[bytes]:
+        pretokens = []
+        parts = re.split(self.specical_token_split_pattern, text)
+        # logger.debug("parts", parts)
+
+        for part in parts:
+            for t in regex.finditer(self.pretokenize_pat, part):
+                pretokens.append(t.group().encode("utf-8"))
+        # logger.debug("pretokens", pretokens)
+        return pretokens
+
+    def apply_merge(self, byte_seq: list[bytes], merge: tuple[bytes, bytes]) -> list[bytes]:
+        new_byte_seq = []
+        i = 0
+        while i < len(byte_seq):
+            if i < len(byte_seq) - 1 and (byte_seq[i], byte_seq[i + 1]) == merge:
+                new_byte_seq.append(byte_seq[i] + byte_seq[i + 1])
+                i += 2
+            else:
+                new_byte_seq.append(byte_seq[i])
+                i += 1
+        return new_byte_seq
+
+
 if __name__ == "__main__":
-    train_bpe_owt()
     # input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
     # input_file = FIXUTRES_PATH / "corpus.en"
     # input_file = DATA_PATH / "example.txt"
@@ -288,3 +369,9 @@ if __name__ == "__main__":
     # print(merges)
     # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
     #     pickle.dump({"vocab": vocab, "merges": merges}, f)
+    input_file = OUTPUT_PATH / "test.pkl"
+    tokenizer = BPETokenizer.from_files(input_file, special_tokens=["<|endoftext|>"])
+    input_text = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    ids = tokenizer.encode(input_text)
+    print(ids)
+    print(tokenizer.decode(ids))
