@@ -287,26 +287,30 @@ class BPETokenizer:
     ):
         self.vocab = vocab
         self.merges = merges
-        self.special_tokens = special_tokens
+        self.special_tokens = special_tokens or []
+        self.should_handle_special_tokens = False
+        if special_tokens:
+            self.should_handle_special_tokens = True
+
         self.bytes_to_ids: dict[bytes, int] = {v: k for k, v in vocab.items()}
         self.special_tokens_bytes_to_ids: dict[bytes, int] = {}
-        next_idx = max(vocab.keys()) + 1
-        if special_tokens is not None:
-            for t in special_tokens:
+        self.pretokenize_pat = (
+            r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        )
+        self.decoded_bytes = {}  # cache decoded bytes
+        if self.should_handle_special_tokens:
+            next_idx = max(vocab.keys()) + 1
+            for t in self.special_tokens:
                 tt = t.encode("utf-8")
                 if tt not in self.bytes_to_ids:
                     self.bytes_to_ids[tt] = next_idx
                     self.vocab[next_idx] = tt
                 self.special_tokens_bytes_to_ids[tt] = self.bytes_to_ids[tt]
-
-        self.special_tokens_escaped = (
-            [re.escape(t) for t in special_tokens] if special_tokens else []
-        )
-        self.specical_token_split_pattern = f"({'|'.join(self.special_tokens_escaped)})"
-        self.pretokenize_pat = (
-            r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        )
-        self.decoded_bytes = {}  # cache decoded bytes
+            # ensures longer tokens come first to handle overlapping tokens
+            # in case of ["<|endoftext|>", "<|endoftext|><|endoftext|>"]
+            sorted_tokens = sorted(special_tokens, key=len, reverse=True)
+            self.special_tokens_escaped = [re.escape(t) for t in sorted_tokens]
+            self.special_token_split_pattern = f"({'|'.join(self.special_tokens_escaped)})"
 
     @classmethod
     def from_files(cls, file_path: str | os.PathLike, special_tokens: list[str] | None = None):
@@ -322,6 +326,7 @@ class BPETokenizer:
             if byte_word in self.decoded_bytes:
                 encoded_results.extend(self.decoded_bytes[byte_word])
             elif byte_word in self.special_tokens_bytes_to_ids:
+                # logger.debug("byte_word in special token")
                 encoded_results.append(self.special_tokens_bytes_to_ids[byte_word])
             else:
                 byte_seq = [bytes([i]) for i in list(byte_word)]
@@ -338,12 +343,18 @@ class BPETokenizer:
 
     def pretokenize(self, text: str) -> list[bytes]:
         pretokens = []
-        parts = re.split(self.specical_token_split_pattern, text)
+        if self.should_handle_special_tokens:
+            parts = [p for p in re.split(self.special_token_split_pattern, text) if p]
+        else:
+            parts = [text]
         # logger.debug("parts", parts)
 
         for part in parts:
-            for t in regex.finditer(self.pretokenize_pat, part):
-                pretokens.append(t.group().encode("utf-8"))
+            if part in self.special_tokens:
+                pretokens.append(part.encode("utf-8"))
+            else:
+                for t in regex.finditer(self.pretokenize_pat, part):
+                    pretokens.append(t.group().encode("utf-8"))
         # logger.debug("pretokens", pretokens)
         return pretokens
 
@@ -370,8 +381,8 @@ if __name__ == "__main__":
     # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
     #     pickle.dump({"vocab": vocab, "merges": merges}, f)
     input_file = OUTPUT_PATH / "test.pkl"
-    tokenizer = BPETokenizer.from_files(input_file, special_tokens=["<|endoftext|>"])
-    input_text = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    tokenizer = BPETokenizer.from_files(input_file, ["<|endoftext|>"])
+    input_text = "Four score and seven years ago our fathers brought forth, on this continent, a new nation, conceived in Liberty, and dedicated to the proposition that all men are created equal."
     ids = tokenizer.encode(input_text)
     print(ids)
     print(tokenizer.decode(ids))
