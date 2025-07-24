@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from itertools import pairwise
 import pathlib
 import pickle
@@ -326,7 +327,6 @@ class BPETokenizer:
             if byte_word in self.decoded_bytes:
                 encoded_results.extend(self.decoded_bytes[byte_word])
             elif byte_word in self.special_tokens_bytes_to_ids:
-                # logger.debug("byte_word in special token")
                 encoded_results.append(self.special_tokens_bytes_to_ids[byte_word])
             else:
                 byte_seq = [bytes([i]) for i in list(byte_word)]
@@ -336,6 +336,11 @@ class BPETokenizer:
                 self.decoded_bytes[byte_word] = ids
                 encoded_results.extend(ids)
         return encoded_results
+
+    def encode_iterable(self, iter: Iterable[str]) -> Iterable[int]:
+        for line in iter:
+            encoded_line = self.encode(line)
+            yield from encoded_line
 
     def decode(self, ids: list[int]) -> str:
         byte_list = [self.vocab[i] for i in ids]
@@ -347,7 +352,6 @@ class BPETokenizer:
             parts = [p for p in re.split(self.special_token_split_pattern, text) if p]
         else:
             parts = [text]
-        # logger.debug("parts", parts)
 
         for part in parts:
             if part in self.special_tokens:
@@ -355,7 +359,6 @@ class BPETokenizer:
             else:
                 for t in regex.finditer(self.pretokenize_pat, part):
                     pretokens.append(t.group().encode("utf-8"))
-        # logger.debug("pretokens", pretokens)
         return pretokens
 
     def apply_merge(self, byte_seq: list[bytes], merge: tuple[bytes, bytes]) -> list[bytes]:
@@ -372,17 +375,10 @@ class BPETokenizer:
 
 
 if __name__ == "__main__":
-    # input_file = FIXUTRES_PATH / "tinystories_sample_5M.txt"
-    # input_file = FIXUTRES_PATH / "corpus.en"
-    # input_file = DATA_PATH / "example.txt"
-    # special_tokens = ["<|endoftext|>"]
-    # vocab, merges = train_bpe(input_file, 265, special_tokens)
-    # print(merges)
-    # with open(OUTPUT_PATH / "test.pkl", "wb") as f:
-    #     pickle.dump({"vocab": vocab, "merges": merges}, f)
     input_file = OUTPUT_PATH / "test.pkl"
     tokenizer = BPETokenizer.from_files(input_file, ["<|endoftext|>"])
-    input_text = "Four score and seven years ago our fathers brought forth, on this continent, a new nation, conceived in Liberty, and dedicated to the proposition that all men are created equal."
-    ids = tokenizer.encode(input_text)
-    print(ids)
-    print(tokenizer.decode(ids))
+    all_ids = []
+    with open(FIXUTRES_PATH / "tinystories_sample.txt") as f:
+        for _id in tokenizer.encode_iterable(f):
+            all_ids.append(_id)
+            print(_id)
