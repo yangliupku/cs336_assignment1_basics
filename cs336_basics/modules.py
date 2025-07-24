@@ -121,6 +121,20 @@ def stable_softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     return c / torch.sum(c, dim=dim, keepdim=True)
 
 
+def cross_entropy(
+    logits: Float[torch.Tensor, " batch_size vocab_size"], targets: Int[torch.Tensor, " batch_size"]
+) -> Float[torch.Tensor, ""]:
+    logits = logits.view(-1, logits.size(-1))
+    targets = targets.view(-1)
+    normalized_logits = logits - torch.max(logits, dim=-1, keepdim=True).values
+    batch_indices = torch.arange(len(targets))
+    ce = (
+        torch.log(torch.sum(torch.exp(normalized_logits), dim=-1, keepdim=True))
+        - normalized_logits[batch_indices, targets]
+    )
+    return torch.mean(ce)
+
+
 def scaled_dot_product_attention(
     Q: Float[torch.Tensor, "batch ... seq_len d_k"],
     K: Float[torch.Tensor, "batch ... seq_len d_k"],
