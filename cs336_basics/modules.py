@@ -277,6 +277,42 @@ class TransformerLM(torch.nn.Module):
         return x
 
 
+def generate(
+    model: torch.nn.Module,
+    prompt: list[int],
+    context_length: int,
+    max_new_tokens: int,
+    temperature: float = 1.0,
+    top_p: float = None,
+):
+    input_ids = prompt[-context_length:]
+    in_indices = torch.tensor(input_ids).unsqueeze(0)
+    out_ids = []
+    for _ in range(max_new_tokens):
+        logits = model(in_indices)
+        logits = logits[:, -1, :] / temperature
+        probs = stable_softmax(logits, dim=-1)
+
+        if top_p is not None:
+            sorted_probs, sorted_indices = torch.sort(probs, dim=-1, descending=True)
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+            # Find the smallest number of items that sum to at least p
+            mask = cumulative_probs < top_p
+            # offset mask by 1 to include the element that make prob sum > p
+            mask = torch.cat([torch.ones_like(mask[:, :1]), mask[:, :-1]], dim=1)
+            # Set probabilities of excluded items to 0
+            sorted_probs[~mask] = 0
+            # Re-normalize probabilities
+            probs = torch.zeros_like(probs).scatter_(-1, sorted_indices, sorted_probs)
+
+        id_next = torch.multinomial(probs, num_samples=1)
+        out_ids.append(id_next[0, 0].item())
+        if id_next[0, 0].item() == 0:
+            break
+        in_indices = torch.cat((in_indices, id_next), dim=1)[:, -context_length:]
+    return out_ids
+
+
 if __name__ == "__main__":
     seed = 0
     torch.manual_seed(seed)
@@ -287,8 +323,8 @@ if __name__ == "__main__":
     num_heads = 2
     num_layers = 2
     seq_len = 3
-    input = torch.randint(0, vocab_size, (batch_size, seq_len))
-    layer = TransformerLM(
+    # input = torch.randint(0, vocab_size, (batch_size, seq_len))
+    model = TransformerLM(
         vocab_size=vocab_size,
         context_length=max_seq_length,
         d_model=embedding_size,
@@ -297,7 +333,12 @@ if __name__ == "__main__":
         d_ff=4 * embedding_size,
         rope_theta=1.0,
     )
-    # print(layer(input, token_positions))
-    print(input.shape)
-    print(layer(input).shape)
-    print(layer.state_dict().keys())
+    outputs = generate(
+        model=model,
+        prompt=[3, 8, 2, 5, 1],
+        context_length=max_seq_length,
+        max_new_tokens=100,
+        temperature=1.0,
+        top_p=0.8,
+    )
+    print(outputs)
