@@ -29,8 +29,8 @@ class AdamW(torch.optim.Optimizer):
                     continue
                 state = self.state[p]
                 t = state.get("t", 1)
-                m = state.get("m", torch.zeros(p.shape))
-                v = state.get("v", torch.zeros(p.shape))
+                m = state.get("m", torch.zeros(p.shape, device=p.device))
+                v = state.get("v", torch.zeros(p.shape, device=p.device))
                 g = p.grad.data
                 m = betas[0] * m + (1 - betas[0]) * g
                 v = betas[1] * v + (1 - betas[1]) * (g**2)

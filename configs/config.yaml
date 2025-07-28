@@ -1,0 +1,22 @@
+seed: 12
+
+model:
+  vocab_size: 10000
+  context_length: 256
+  d_model: 512
+  d_ff: 1344
+  rope_theta: 10000
+  num_layers: 4
+  num_heads: 16
+
+optimizer:
+  name: adamw
+  lr: 1e-3
+  beta: [0.9, 0.99]
+  weight_decay: 0.01
+
+training:
+  batch_size: 32
+  max_steps: 100000
+  save_every: 1000
+  log_every: 100
