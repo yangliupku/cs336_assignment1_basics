@@ -13,6 +13,7 @@ from tqdm import tqdm
 from cs336_basics.logger import Logger
 import logging
 from copy import deepcopy
+import numpy as np
 
 logger = Logger(__file__, level=logging.DEBUG)
 
@@ -322,7 +323,7 @@ class BPETokenizer:
     def encode(self, text: str) -> list[int]:
         pretokenized_bytes = self.pretokenize(text)
         encoded_results = []
-        for byte_word in pretokenized_bytes:
+        for byte_word in tqdm(pretokenized_bytes, desc="Encoding", disable=not SHOW_PROGRESS):
             # byte_word = b'Hello'
             if byte_word in self.decoded_bytes:
                 encoded_results.extend(self.decoded_bytes[byte_word])
@@ -375,7 +376,7 @@ class BPETokenizer:
 
 
 if __name__ == "__main__":
-    input_file = OUTPUT_PATH / "test.pkl"
+    input_file = OUTPUT_PATH / "tinystories.pkl"
     tokenizer = BPETokenizer.from_files(input_file, ["<|endoftext|>"])
     all_ids = []
     with open(FIXUTRES_PATH / "tinystories_sample.txt") as f:
