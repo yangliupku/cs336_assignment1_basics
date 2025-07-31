@@ -167,4 +167,5 @@ data/
 bpe_output/
 logs/
 outputs/
+experiments/
 .vscode/settings.json

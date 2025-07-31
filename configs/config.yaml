@@ -1,6 +1,12 @@
+experiment:
+  name: null # Auto-generated if null
+  description: "cs336_assignment1" # Short description
+  tags: ["cs336_assignment1"] # For wandb organization
+
 seed: 12
 
 model:
+  name: TransformerLM
   vocab_size: 10000
   context_length: 256
   d_model: 512
@@ -8,6 +14,8 @@ model:
   rope_theta: 10000
   num_layers: 4
   num_heads: 16
+
+dataset: Tinystory
 
 optimizer:
   name: adamw
