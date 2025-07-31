@@ -17,6 +17,7 @@ optimizer:
 
 training:
   batch_size: 32
-  max_steps: 100000
-  save_every: 1000
+  max_iters: 5000
+  save_every: 500
   log_every: 100
+  eval_iters: 100

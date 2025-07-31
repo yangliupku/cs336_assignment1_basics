@@ -3,6 +3,7 @@ import typing
 import numpy as np
 import torch
 import numpy.typing as npt
+from cs336_basics.modules import cross_entropy
 
 
 def get_batch(
@@ -39,6 +40,25 @@ def load_checkpoint(
     model.load_state_dict(states["model_states"])
     optimizer.load_state_dict(states["optimizer_states"])
     return states["iteration"]
+
+
+def estimate_loss(
+    data: npt.NDArray,
+    model: torch.nn.Module,
+    batch_size: int,
+    context_length: int,
+    num_iters: int,
+    device: str,
+) -> float:
+    losses = []
+    model.eval()
+    for i in range(num_iters):
+        inputs, labels = get_batch(data, batch_size, context_length, device)
+        logits = model(inputs)
+        loss = cross_entropy(logits, labels)
+        losses.append(loss.item())
+    model.train()
+    return sum(losses) / len(losses)
 
 
 if __name__ == "__main__":

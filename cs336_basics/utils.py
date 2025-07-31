@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import torch
-from tokenizer import BPETokenizer
+from cs336_basics.tokenizer import BPETokenizer
 import pathlib
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
