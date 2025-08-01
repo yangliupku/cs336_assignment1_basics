@@ -34,3 +34,10 @@ generate:
   max_new_tokens: 100
   temperature: 1.0
   top_p: 0.8
+  test_prompts:
+    - "In the bustling city of New York, a taxi driver noticed"
+    - "Once upon a time, in a land far, far away, there lived a"
+    - "I woke up this morning and"
+    - "The cat walked across the"
+    - "The capital of France is"
+    - "The sun rises in the"

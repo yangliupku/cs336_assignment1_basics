@@ -20,7 +20,7 @@ def train(cfg: DictConfig):
         exp_name = generate_experiment_name(cfg)
     else:
         exp_name = cfg.experiment.name
-    print(exp_name)
+
     exp_path = create_experiment_structure(exp_name)
     OmegaConf.save(cfg, f"{exp_path}/configs/config.yaml")
 
