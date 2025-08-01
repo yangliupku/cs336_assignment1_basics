@@ -9,10 +9,10 @@ from cs336_basics.optimizers import AdamW
 import pathlib
 
 
-DATA_PATH = (pathlib.Path(__file__).resolve().parent) / "data"
+DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 
 
-@hydra.main(config_path="configs", config_name="config")
+@hydra.main(config_path="../configs", config_name="config")
 def train(cfg: DictConfig):
     device = "mps"
     set_seed(cfg.seed)

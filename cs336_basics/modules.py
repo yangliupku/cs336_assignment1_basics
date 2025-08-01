@@ -284,9 +284,10 @@ def generate(
     max_new_tokens: int,
     temperature: float = 1.0,
     top_p: float = None,
+    device: str = None,
 ):
     input_ids = prompt[-context_length:]
-    in_indices = torch.tensor(input_ids).unsqueeze(0)
+    in_indices = torch.tensor(input_ids, device=device).unsqueeze(0)
     out_ids = []
     for _ in range(max_new_tokens):
         logits = model(in_indices)

@@ -5,7 +5,6 @@ import torch
 from cs336_basics.tokenizer import BPETokenizer
 import pathlib
 import os
-from cs336_basics.logger import configure_global_logging
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"

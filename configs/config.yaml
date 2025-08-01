@@ -29,3 +29,8 @@ training:
   save_every: 500
   log_every: 100
   eval_iters: 100
+
+generate:
+  max_new_tokens: 100
+  temperature: 1.0
+  top_p: 0.8
