@@ -34,7 +34,8 @@ def train(cfg: DictConfig):
     )
     test_prompts = list(cfg.generate.test_prompts)
     columns = ["step"] + test_prompts
-    table = wandb.Table(columns=columns)
+    # Initialize empty list to store all rows
+    all_generations = []
 
     model = TransformerLM(
         vocab_size=cfg.model.vocab_size,
@@ -105,8 +106,16 @@ def train(cfg: DictConfig):
                     device=device,
                 )
                 row_data.append(tokenizer.decode(outputs))
-            table.add_data(*row_data)
-            run.log({"text_generations": table})
+
+            # Add this row to our collection
+            all_generations.append(row_data)
+
+            # Create a fresh table with all accumulated data
+            table = wandb.Table(columns=columns)
+            for row in all_generations:
+                table.add_data(*row)
+
+            run.log({"text_generations": table}, step=iter)
 
     run.finish()
 
