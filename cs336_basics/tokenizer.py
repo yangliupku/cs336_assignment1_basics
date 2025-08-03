@@ -8,14 +8,8 @@ import os
 import regex
 from typing import BinaryIO
 import multiprocessing as mp
-import time
 from tqdm import tqdm
-from cs336_basics.logger import Logger
-import logging
 from copy import deepcopy
-import numpy as np
-
-logger = Logger(__file__, level=logging.DEBUG)
 
 
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
@@ -97,7 +91,6 @@ def pretokenize(
     special_tokens: list[str] = ["<|endoftext|>"],
     num_processes: int = 8,
 ) -> dict[tuple[bytes], int]:
-    start_time = time.time()
     chunk_args = []
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
@@ -106,13 +99,11 @@ def pretokenize(
 
     with mp.Pool(processes=num_processes) as pool:
         results = pool.starmap(pretokenize_chunk, chunk_args)
-    logger.debug(f"---> Pretokenization time: {time.time() - start_time:.2f}s")
     return sum(results, Counter())
 
 
 def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
     # count adjacent byte pairs
-    start_time = time.time()
     merge_counter = Counter()
     for byte_seq, seq_ct in byte_tuple_dict.items():
         if len(byte_seq) > 1:
@@ -122,14 +113,12 @@ def get_merge_pair(byte_tuple_dict: dict[tuple[bytes], int]) -> tuple[bytes, byt
     # break the tie and get most frequent pair
     tied_pairs = [pair for pair, count in merge_counter.items() if count == max_count]
     merge_byte_pair = max(tied_pairs)
-    logger.debug(f"get_merge_pair time: {time.time() - start_time:.2f}s")
     return merge_byte_pair
 
 
 def apply_merge_pair(
     byte_tuple_dict: dict[tuple[bytes], int], merge_byte_pair: tuple[bytes, bytes]
 ) -> dict[tuple[bytes], int]:
-    start_time = time.time()
     merged_bytes_tuple_dict = Counter()
     for byte_tuple, count in byte_tuple_dict.items():
         new_byte_seq = []
@@ -142,7 +131,6 @@ def apply_merge_pair(
                 new_byte_seq.append(byte_tuple[i])
                 i += 1
         merged_bytes_tuple_dict[tuple(new_byte_seq)] += count
-    logger.debug(f"apply_merge_pair time: {time.time() - start_time:.2f}s")
     return merged_bytes_tuple_dict
 
 
