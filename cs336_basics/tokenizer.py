@@ -21,7 +21,7 @@ logger = Logger(__file__, level=logging.DEBUG)
 DATA_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "data"
 OUTPUT_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "bpe_output"
 FIXUTRES_PATH = (pathlib.Path(__file__).resolve().parent.parent) / "tests" / "fixtures"
-SHOW_PROGRESS = True
+SHOW_PROGRESS = False
 
 
 def find_chunk_boundaries(
